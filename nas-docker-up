@@ -1,10 +1,10 @@
 #!/bin/bash
-# nas-docker-up — Applique les mises à jour Docker via docker compose up -d
-# Usage : nas-docker-up [stack_name]
-#   Sans argument : met à jour tous les conteneurs ayant une image plus récente
-#   Avec argument : met à jour uniquement la stack spécifiée
-# Mode HA (non-interactif) : applique directement, pas de prompt
-# Mode terminal : confirmation par stack (sauf si stack spécifiée en argument)
+# nas-docker-up — Apply Docker updates via docker compose up -d
+# Usage: nas-docker-up [stack_name]
+#   No argument: updates all containers with a newer image available
+#   With argument: updates only the specified stack
+# Non-interactive mode (HA): applies directly, no prompt
+# Terminal mode: confirmation per stack (unless a specific stack is given)
 
 set -euo pipefail
 
@@ -12,7 +12,7 @@ if [ -t 1 ]; then INTERACTIVE=true; else INTERACTIVE=false; fi
 
 TARGET_STACK="${1:-}"
 
-# Couleurs (mode terminal uniquement)
+# Colors (terminal mode only)
 if $INTERACTIVE; then
     RED='\033[0;31m'
     GREEN='\033[0;32m'
@@ -24,7 +24,7 @@ else
     RED='' GREEN='' YELLOW='' CYAN='' BOLD='' RESET=''
 fi
 
-# --- Détection de l'env global OMV ---
+# --- Detect global OMV env file ---
 OMV_GLOBAL_ENV=""
 if [ -f "/etc/omv-compose.env" ]; then
     OMV_GLOBAL_ENV="/etc/omv-compose.env"
@@ -32,7 +32,7 @@ elif [ -f "/srv/omv-compose.env" ]; then
     OMV_GLOBAL_ENV="/srv/omv-compose.env"
 fi
 
-# --- Collecte des conteneurs à mettre à jour ---
+# --- Collect containers to update ---
 containers_to_update=()
 images_to_update=()
 compose_dirs=()
@@ -41,11 +41,11 @@ old_versions=()
 new_versions=()
 
 if $INTERACTIVE; then
-    echo -e "${BOLD}--- Phase 1 : Recherche des mises à jour ---${RESET}"
+    echo -e "${BOLD}--- Phase 1: Detecting updates ---${RESET}"
 fi
 
 while IFS=: read -r container_id container_name; do
-    # Filtrer par stack si argument fourni
+    # Filter by stack if argument provided
     if [ -n "$TARGET_STACK" ] && [ "$container_name" != "$TARGET_STACK" ]; then
         stack_label=$(docker inspect --format='{{index .Config.Labels "com.docker.compose.project"}}' "$container_id" 2>/dev/null | xargs)
         if [ "$stack_label" != "$TARGET_STACK" ]; then
@@ -62,14 +62,14 @@ while IFS=: read -r container_id container_name; do
     image_name=$(docker inspect --format='{{.Config.Image}}' "$container_id")
     old_image_id=$(docker inspect --format='{{.Image}}' "$container_id")
     old_ver=$(docker inspect --format='{{index .Config.Labels "org.opencontainers.image.version"}}' "$container_id" 2>/dev/null || echo "")
-    [ -z "$old_ver" ] && old_ver="inconnue"
+    [ -z "$old_ver" ] && old_ver="unknown"
 
     if $INTERACTIVE; then
-        echo -ne "  Vérification de ${CYAN}${container_name}${RESET}... "
+        echo -ne "  Checking ${CYAN}${container_name}${RESET}... "
     fi
 
     if ! docker pull "$image_name" > /dev/null 2>&1; then
-        if $INTERACTIVE; then echo -e "${YELLOW}⚠ Erreur de pull (ignoré)${RESET}"; fi
+        if $INTERACTIVE; then echo -e "${YELLOW}⚠ Pull error (skipped)${RESET}"; fi
         continue
     fi
 
@@ -77,10 +77,10 @@ while IFS=: read -r container_id container_name; do
 
     if [ "$old_image_id" != "$new_image_id" ]; then
         new_ver=$(docker inspect --format='{{index .Config.Labels "org.opencontainers.image.version"}}' "$image_name" 2>/dev/null || echo "")
-        [ -z "$new_ver" ] && new_ver="disponible"
+        [ -z "$new_ver" ] && new_ver="available"
 
         if $INTERACTIVE; then
-            echo -e "${YELLOW}MAJ DISPONIBLE${RESET} : ${YELLOW}${old_ver}${RESET} → ${GREEN}${new_ver}${RESET}"
+            echo -e "${YELLOW}UPDATE AVAILABLE${RESET}: ${YELLOW}${old_ver}${RESET} → ${GREEN}${new_ver}${RESET}"
         fi
 
         containers_to_update+=("$container_name")
@@ -90,7 +90,7 @@ while IFS=: read -r container_id container_name; do
         old_versions+=("$old_ver")
         new_versions+=("$new_ver")
     else
-        if $INTERACTIVE; then echo -e "${GREEN}✅ À jour${RESET}"; fi
+        if $INTERACTIVE; then echo -e "${GREEN}✅ Up to date${RESET}"; fi
     fi
 
 done < <(docker ps --format "{{.ID}}:{{.Names}}")
@@ -98,30 +98,28 @@ done < <(docker ps --format "{{.ID}}:{{.Names}}")
 if [ ${#containers_to_update[@]} -eq 0 ]; then
     if $INTERACTIVE; then
         echo ""
-        echo -e "${GREEN}✅ Aucun conteneur à mettre à jour.${RESET}"
-        echo -e "${CYAN}🧹 Nettoyage des images orphelines...${RESET}"
+        echo -e "${GREEN}✅ No containers to update.${RESET}"
     fi
-    docker image prune -f > /dev/null
     exit 0
 fi
 
 if $INTERACTIVE; then
     echo ""
-    echo -e "${BOLD}--- Phase 2 : Bilan des mises à jour disponibles ---${RESET}"
+    echo -e "${BOLD}--- Phase 2: Available updates ---${RESET}"
     for i in "${!containers_to_update[@]}"; do
-        echo -e "  • ${CYAN}${containers_to_update[$i]}${RESET} : ${YELLOW}${old_versions[$i]}${RESET} → ${GREEN}${new_versions[$i]}${RESET}"
+        echo -e "  • ${CYAN}${containers_to_update[$i]}${RESET}: ${YELLOW}${old_versions[$i]}${RESET} → ${GREEN}${new_versions[$i]}${RESET}"
     done
     echo ""
 
-    # Si stack spécifique : pas de question sur le mode, on applique directement
+    # If a specific stack was given, apply directly without asking
     if [ -z "$TARGET_STACK" ]; then
         UPDATE_ALL=false
         while true; do
-            read -p "Mettre à jour TOUS ces conteneurs ? [y]es (Tout) / [n]o (Choisir par conteneur) : " global_choice
+            read -p "Update ALL containers? [y]es (All) / [n]o (Choose per container): " global_choice
             case "$global_choice" in
                 [yY]*) UPDATE_ALL=true; break ;;
                 [nN]*) UPDATE_ALL=false; break ;;
-                *) echo "Veuillez répondre par y ou n." ;;
+                *) echo "Please answer y or n." ;;
             esac
         done
     else
@@ -129,10 +127,10 @@ if $INTERACTIVE; then
     fi
 fi
 
-# --- Phase 3 : Application ---
+# --- Phase 3: Apply ---
 if $INTERACTIVE; then
     echo ""
-    echo -e "${BOLD}--- Phase 3 : Application des mises à jour ---${RESET}"
+    echo -e "${BOLD}--- Phase 3: Applying updates ---${RESET}"
 fi
 
 START_DIR=$(pwd)
@@ -148,34 +146,34 @@ for i in "${!containers_to_update[@]}"; do
     DO_UPDATE=false
 
     if ! $INTERACTIVE; then
-        # Mode HA : toujours appliquer
+        # HA mode: always apply
         DO_UPDATE=true
     elif [ "$UPDATE_ALL" = true ]; then
         DO_UPDATE=true
     else
         while true; do
-            read -p "Mettre à jour '${c_name}' (${c_old_ver} → ${c_new_ver}) ? [y/n] : " choice
+            read -p "  Update '${c_name}' (${c_old_ver} → ${c_new_ver})? [y/n]: " choice
             case "$choice" in
                 [yY]*) DO_UPDATE=true; break ;;
                 [nN]*) DO_UPDATE=false; break ;;
-                *) echo "Veuillez répondre par y ou n." ;;
+                *) echo "Please answer y or n." ;;
             esac
         done
     fi
 
     if [ "$DO_UPDATE" = true ]; then
         if $INTERACTIVE; then
-            echo -e "  🚀 Mise à jour de ${CYAN}${c_name}${RESET} dans ${c_dir}..."
+            echo -e "  🚀 Updating ${CYAN}${c_name}${RESET} in ${c_dir}..."
         fi
 
         if cd "$c_dir" 2>/dev/null; then
             ENV_ARGS=""
 
-            # Env global OMV
+            # Global OMV env
             if [ -n "$OMV_GLOBAL_ENV" ] && [ -f "$OMV_GLOBAL_ENV" ]; then
                 ENV_ARGS="--env-file $OMV_GLOBAL_ENV"
             else
-                # Fallback : chercher global.env ou .env dans le dossier parent
+                # Fallback: look for global.env or .env in parent directory
                 PARENT_DIR=$(dirname "$c_dir")
                 if [ -f "$PARENT_DIR/global.env" ]; then
                     ENV_ARGS="--env-file $PARENT_DIR/global.env"
@@ -184,31 +182,31 @@ for i in "${!containers_to_update[@]}"; do
                 fi
             fi
 
-            # .env local (toujours ajouté s'il existe)
+            # Local .env (always added if present)
             if [ -f ".env" ]; then
                 ENV_ARGS="$ENV_ARGS --env-file .env"
             fi
 
             if docker compose $ENV_ARGS up -d --remove-orphans 2>&1; then
                 if $INTERACTIVE; then
-                    echo -e "  ${GREEN}✅ ${c_name} mis à jour avec succès.${RESET}"
+                    echo -e "  ${GREEN}✅ ${c_name} updated successfully.${RESET}"
                 fi
                 upgraded=$((upgraded + 1))
             else
                 if $INTERACTIVE; then
-                    echo -e "  ${RED}❌ Échec de la mise à jour pour ${c_name}.${RESET}"
+                    echo -e "  ${RED}❌ Update failed for ${c_name}.${RESET}"
                 fi
                 failed=$((failed + 1))
             fi
         else
             if $INTERACTIVE; then
-                echo -e "  ${RED}❌ Impossible d'accéder à ${c_dir}.${RESET}"
+                echo -e "  ${RED}❌ Cannot access ${c_dir}.${RESET}"
             fi
             failed=$((failed + 1))
         fi
     else
         if $INTERACTIVE; then
-            echo -e "  ⏭  Mise à jour ignorée pour ${c_name}."
+            echo -e "  ⏭  Skipped: ${c_name}"
         fi
     fi
 
@@ -217,8 +215,8 @@ done
 
 if $INTERACTIVE; then
     echo ""
-    echo -e "${BOLD}--- Terminé ---${RESET}"
-    echo -e "  ${GREEN}✅ ${upgraded} mis à jour${RESET}  ${RED}❌ ${failed} en échec${RESET}"
+    echo -e "${BOLD}--- Done ---${RESET}"
+    echo -e "  ${GREEN}✅ ${upgraded} updated${RESET}  ${RED}❌ ${failed} failed${RESET}"
 else
     printf '{"upgraded":%d,"failed":%d}\n' "$upgraded" "$failed"
 fi

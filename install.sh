@@ -1,8 +1,11 @@
 #!/bin/bash
 # install.sh — Install nas-ops scripts to /usr/local/bin
-# Usage : curl -fsSL https://raw.githubusercontent.com/GuiPoM/nas-ops/main/install.sh | bash
+# Usage: bash <(curl -fsSL https://raw.githubusercontent.com/GuiPoM/nas-ops/main/install.sh)
 
 set -euo pipefail
+
+# Redirect stdin from /dev/tty to avoid issues when piped from curl
+exec < /dev/tty
 
 REPO="GuiPoM/nas-ops"
 BRANCH="main"
@@ -10,8 +13,8 @@ BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 INSTALL_DIR="/usr/local/bin"
 
 SCRIPTS=(
-    "nas-update-system"
-    "nas-upgrade-system"
+    "nas-system-update"
+    "nas-system-upgrade"
     "nas-docker-pull"
     "nas-docker-up"
     "nas-docker-prune"
@@ -39,8 +42,8 @@ fi
 
 # Check dependencies
 echo -e "${CYAN}Checking dependencies...${RESET}"
-for cmd in curl docker; do
-    if command -v "$cmd" > /dev/null 2>&1; then
+for cmd in curl docker apt-get; do
+    if type "$cmd" > /dev/null 2>&1 || [ -x "/usr/bin/$cmd" ] || [ -x "/bin/$cmd" ]; then
         echo -e "  ${GREEN}✅ ${cmd}${RESET}"
     else
         echo -e "  ${YELLOW}⚠ ${cmd} not found — some scripts may not work${RESET}"
@@ -51,12 +54,11 @@ echo ""
 # Download and install scripts
 echo -e "${CYAN}Installing scripts to ${INSTALL_DIR}...${RESET}"
 for script in "${SCRIPTS[@]}"; do
-    echo -ne "  Downloading ${script}... "
     if curl -fsSL "${BASE_URL}/${script}" -o "${INSTALL_DIR}/${script}"; then
         chmod +x "${INSTALL_DIR}/${script}"
-        echo -e "${GREEN}✅${RESET}"
+        echo -e "  ${GREEN}✅ ${script}${RESET}"
     else
-        echo -e "${RED}❌ Failed${RESET}"
+        echo -e "  ${RED}❌ ${script} — Failed${RESET}"
         exit 1
     fi
 done

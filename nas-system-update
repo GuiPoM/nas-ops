@@ -1,0 +1,83 @@
+#!/bin/bash
+# nas-system-update — Check available system updates (apt)
+# Usage: nas-system-update
+# Output: JSON (non-interactive mode) or colored text (terminal mode)
+
+set -euo pipefail
+
+if [ -t 1 ]; then INTERACTIVE=true; else INTERACTIVE=false; fi
+
+# Colors (terminal mode only)
+if $INTERACTIVE; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+else
+    RED='' GREEN='' YELLOW='' CYAN='' BOLD='' RESET=''
+fi
+
+if $INTERACTIVE; then
+    echo -e "${BOLD}--- Refreshing package list ---${RESET}"
+fi
+
+apt-get update -qq 2>/dev/null
+
+# Parse apt-get --simulate full-upgrade
+# Format:
+#   Inst name (available_version ...) → new package
+#   Inst name [current_version] (available_version ...) → upgrade
+packages_json=""
+count=0
+
+while IFS= read -r line; do
+    # Extract package name (2nd field)
+    name=$(echo "$line" | awk '{print $2}' | tr -d '[:space:]')
+    [ -z "$name" ] && continue
+
+    # Current version: inside [...] if present, else N/A
+    current=$(echo "$line" | grep -oP '(?<=\[)[^\]]+' | tr -d '[:space:]' || echo "")
+    [ -z "$current" ] && current="N/A"
+
+    # Available version: first word inside first (...)
+    available=$(echo "$line" | grep -oP '(?<=\()[^ ]+' | head -1 | tr -d '[:space:]')
+    [ -z "$available" ] && continue
+
+    if $INTERACTIVE; then
+        echo -e "  ${CYAN}${name}${RESET} : ${YELLOW}${current}${RESET} → ${GREEN}${available}${RESET}"
+    fi
+
+    # Build JSON entry
+    entry="{\"name\":\"${name}\",\"current\":\"${current}\",\"available\":\"${available}\"}"
+    if [ $count -eq 0 ]; then
+        packages_json="${entry}"
+    else
+        packages_json="${packages_json},${entry}"
+    fi
+    count=$((count + 1))
+
+done < <(apt-get --simulate full-upgrade 2>/dev/null | grep "^Inst")
+
+# Check if reboot is required
+reboot_required=false
+if [ -f /var/run/reboot-required ]; then
+    reboot_required=true
+fi
+
+if $INTERACTIVE; then
+    echo ""
+    echo -e "${BOLD}--- Summary ---${RESET}"
+    if [ $count -eq 0 ]; then
+        echo -e "${GREEN}✅ System is up to date.${RESET}"
+    else
+        echo -e "${YELLOW}📦 ${count} package(s) available for upgrade.${RESET}"
+    fi
+    if $reboot_required; then
+        echo -e "${RED}⚠️  Reboot required.${RESET}"
+    fi
+else
+    printf '{"count":%d,"reboot_required":%s,"packages":[%s]}\n' \
+        "$count" "$reboot_required" "$packages_json"
+fi

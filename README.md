@@ -1,30 +1,41 @@
 # nas-ops
 
-Scripts de maintenance et de mise à jour pour NAS sous Debian / OpenMediaVault 8.
+Maintenance and update scripts for NAS running Debian / OpenMediaVault 8.
 
-Gère les mises à jour système (`apt`) et Docker (`docker compose`), avec deux modes :
-- **Terminal interactif** : affichage coloré, confirmations
-- **Non-interactif** (Home Assistant, cron) : output JSON
+Handles system updates (`apt`) and Docker updates (`docker compose`), with two modes:
+- **Interactive terminal**: colored output, confirmations
+- **Non-interactive** (Home Assistant, cron): JSON output
 
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GuiPoM/nas-ops/main/install.sh | bash
+bash <(curl -fsSL https://raw.githubusercontent.com/GuiPoM/nas-ops/main/install.sh)
 ```
 
-Les scripts sont installés dans `/usr/local/bin/` et disponibles directement en ligne de commande.
+Scripts are installed in `/usr/local/bin/` and available directly from the command line.
+
+## Sudo configuration (required for Home Assistant)
+
+When calling scripts via SSH from Home Assistant, sudo requires passwordless access. Add the following rule on the NAS:
+
+```bash
+echo "<user> ALL=(ALL) NOPASSWD: /usr/local/bin/nas-system-update, /usr/local/bin/nas-system-upgrade, /usr/local/bin/nas-docker-pull, /usr/local/bin/nas-docker-up, /usr/local/bin/nas-docker-prune" > /etc/sudoers.d/nas-ops
+chmod 440 /etc/sudoers.d/nas-ops
+```
+
+Replace `<user>` with the SSH user used in your Home Assistant config (e.g. the user in `/config/.ssh/config`).
 
 ## Scripts
 
 ### `nas-update`
 
-Script racine interactif. Orchestre toutes les étapes dans l'ordre :
+Interactive root script. Orchestrates all steps in order:
 
-1. Analyse système (apt)
-2. Pull et détection des mises à jour Docker
-3. Upgrade système (confirmation)
-4. Upgrade Docker (tout ou conteneur par conteneur)
-5. Nettoyage des images orphelines
+1. System analysis (apt)
+2. Docker pull and update detection
+3. System upgrade (with confirmation)
+4. Docker upgrade (all at once or container by container)
+5. Orphaned image cleanup
 
 ```bash
 nas-update
@@ -32,15 +43,15 @@ nas-update
 
 ---
 
-### `nas-update-system`
+### `nas-system-update`
 
-Vérifie les mises à jour système disponibles via apt. Ne modifie rien.
+Checks available system updates via apt. Does not modify anything.
 
-- Mode terminal : affichage coloré des paquets upgradables
-- Mode non-interactif (HA) : output JSON
+- Terminal mode: colored output of upgradable packages
+- Non-interactive mode (HA): JSON output
 
 ```bash
-nas-update-system
+nas-system-update
 ```
 
 ```json
@@ -49,57 +60,57 @@ nas-update-system
 
 ---
 
-### `nas-upgrade-system`
+### `nas-system-upgrade`
 
-Applique les mises à jour système (`apt full-upgrade`).
+Applies system updates (`apt full-upgrade`).
 
-- Mode terminal : affiche le bilan + confirmation avant d'appliquer
-- Mode non-interactif (HA) : applique directement
+- Terminal mode: shows summary + confirmation before applying
+- Non-interactive mode (HA): applies directly
 
 ```bash
-nas-upgrade-system
+nas-system-upgrade
 ```
 
 ---
 
 ### `nas-docker-pull`
 
-Pull toutes les images Docker des conteneurs actifs et détecte les mises à jour disponibles. **Ne recrée pas les conteneurs.**
+Pulls all Docker images for active containers and detects available updates. **Does not recreate containers.**
 
-Idempotent : tant que `nas-docker-up` n'a pas recréé les conteneurs, le check détecte toujours l'écart.
+Idempotent: as long as `nas-docker-up` has not recreated the containers, the check always detects the gap.
 
-- Mode terminal : affichage coloré
-- Mode non-interactif (HA) : output JSON
+- Terminal mode: colored output
+- Non-interactive mode (HA): JSON output
 
 ```bash
 nas-docker-pull
 ```
 
 ```json
-{"count":1,"containers":[{"name":"jellyfin","image":"jellyfin/jellyfin:latest","compose_dir":"/opt/stacks/jellyfin","current":"10.9.0","available":"disponible"}]}
+{"count":1,"containers":[{"name":"jellyfin","image":"jellyfin/jellyfin:latest","compose_dir":"/opt/stacks/jellyfin","current":"10.9.0","available":"available"}]}
 ```
 
 ---
 
 ### `nas-docker-up`
 
-Recrée les conteneurs sur la nouvelle image via `docker compose up -d --remove-orphans`.
+Recreates containers on the new image via `docker compose up -d --remove-orphans`.
 
-- Sans argument : propose la mise à jour de tous les conteneurs ayant une image plus récente
-- Avec argument : cible une stack spécifique
-- Mode terminal : confirmation par stack ou tout d'un coup
-- Mode non-interactif (HA) : applique directement
+- No argument: offers to update all containers with a newer image
+- With argument: targets a specific stack
+- Terminal mode: confirmation per stack or all at once
+- Non-interactive mode (HA): applies directly
 
 ```bash
-nas-docker-up              # toutes les stacks
-nas-docker-up jellyfin     # stack spécifique
+nas-docker-up              # all stacks
+nas-docker-up jellyfin     # specific stack
 ```
 
 ---
 
 ### `nas-docker-prune`
 
-Nettoie les images Docker orphelines (dangling). À appeler après `nas-docker-up`.
+Removes orphaned (dangling) Docker images. Call after `nas-docker-up`.
 
 ```bash
 nas-docker-prune
@@ -107,24 +118,30 @@ nas-docker-prune
 
 ---
 
-## Intégration Home Assistant
+## Home Assistant Integration
 
-Voir `nas-ha-config.yaml` pour la configuration complète.
+Two ready-to-use files are provided:
 
+**`ha-shell-command.yaml`** — include in `configuration.yaml` as:
 ```yaml
-shell_command:
-  nas_update_system: "ssh -F /config/.ssh/config omv 'sudo nas-update-system'"
-  nas_upgrade_system: "ssh -F /config/.ssh/config omv 'sudo nas-upgrade-system'"
-  nas_docker_pull: "ssh -F /config/.ssh/config omv 'sudo nas-docker-pull'"
-  nas_docker_up: "ssh -F /config/.ssh/config omv 'sudo nas-docker-up'"
-  nas_docker_up_stack: "ssh -F /config/.ssh/config omv 'sudo nas-docker-up {{ stack }}'"
-  nas_docker_prune: "ssh -F /config/.ssh/config omv 'sudo nas-docker-prune'"
+shell_command: !include ha-shell-command.yaml
 ```
 
-## Flux typique depuis HA
+**`ha-command-line.yaml`** — include in `configuration.yaml` as:
+```yaml
+command_line: !include ha-command-line.yaml
+```
+
+The `command_line` sensors expose:
+- `sensor.omv_system_updates` → number of upgradable apt packages
+- `sensor.omv_docker_updates` → number of Docker containers to update
+- `reboot_required` and `packages` as attributes on the system sensor
+- `containers` as attribute on the Docker sensor
+
+## Typical workflow from HA
 
 ```
-nas_docker_pull    →  détecte les mises à jour dispo (idempotent)
-nas_docker_up      →  applique les mises à jour
-nas_docker_prune   →  nettoie les anciennes images
+nas_docker_pull    →  detect available updates (idempotent)
+nas_docker_up      →  apply updates
+nas_docker_prune   →  clean up old images
 ```

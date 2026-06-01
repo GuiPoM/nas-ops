@@ -1,0 +1,6 @@
+nas_system_update: "ssh -F /config/.ssh/config omv 'sudo nas-system-update'"
+nas_system_upgrade: "ssh -F /config/.ssh/config omv 'sudo nas-system-upgrade'"
+nas_docker_pull: "ssh -F /config/.ssh/config omv 'sudo nas-docker-pull'"
+nas_docker_up: "ssh -F /config/.ssh/config omv 'sudo nas-docker-up'"
+nas_docker_up_stack: "ssh -F /config/.ssh/config omv 'sudo nas-docker-up {{ stack }}'"
+nas_docker_prune: "ssh -F /config/.ssh/config omv 'sudo nas-docker-prune'"

@@ -1,0 +1,95 @@
+#!/bin/bash
+# nas-system-upgrade — Apply system updates (apt full-upgrade)
+# Usage: nas-system-upgrade
+# Non-interactive mode (HA): applies directly, JSON output
+# Terminal mode: shows summary + confirmation before applying
+
+set -euo pipefail
+
+if [ -t 1 ]; then INTERACTIVE=true; else INTERACTIVE=false; fi
+
+# Colors (terminal mode only)
+if $INTERACTIVE; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+else
+    RED='' GREEN='' YELLOW='' CYAN='' BOLD='' RESET=''
+fi
+
+# Ensure package list is up to date
+if $INTERACTIVE; then
+    echo -e "${BOLD}--- Refreshing package list ---${RESET}"
+fi
+apt-get update -qq 2>/dev/null
+
+# Get packages to install/upgrade via simulation
+# Format:
+#   Inst name (available_version ...) → new package
+#   Inst name [current_version] (available_version ...) → upgrade
+packages=()
+while IFS= read -r line; do
+    name=$(echo "$line" | awk '{print $2}')
+    [ -z "$name" ] && continue
+    current=$(echo "$line" | grep -oP '(?<=\[)[^\]]+' || echo "")
+    [ -z "$current" ] && current="N/A"
+    available=$(echo "$line" | grep -oP '(?<=\()[^ ]+' | head -1)
+    [ -z "$available" ] && continue
+    packages+=("${name}|${current}|${available}")
+done < <(apt-get --simulate full-upgrade 2>/dev/null | grep "^Inst")
+
+count=${#packages[@]}
+
+if [ "$count" -eq 0 ]; then
+    if $INTERACTIVE; then
+        echo -e "${GREEN}✅ System is already up to date, nothing to do.${RESET}"
+    else
+        printf '{"status":"already_up_to_date","upgraded":0,"reboot_required":false}\n'
+    fi
+    exit 0
+fi
+
+if $INTERACTIVE; then
+    echo ""
+    echo -e "${BOLD}--- Packages to upgrade (${count}) ---${RESET}"
+    for entry in "${packages[@]}"; do
+        name=$(echo "$entry" | cut -d'|' -f1)
+        current=$(echo "$entry" | cut -d'|' -f2)
+        available=$(echo "$entry" | cut -d'|' -f3)
+        echo -e "  ${CYAN}${name}${RESET} : ${YELLOW}${current}${RESET} → ${GREEN}${available}${RESET}"
+    done
+    echo ""
+
+    read -p "Apply upgrade for these ${count} package(s)? [y/n]: " confirm
+    case "$confirm" in
+        [yY]*) ;;
+        *) echo -e "${YELLOW}Cancelled.${RESET}"; exit 0 ;;
+    esac
+    echo ""
+    echo -e "${BOLD}--- Running apt full-upgrade ---${RESET}"
+fi
+
+# Apply
+DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y \
+    -o Dpkg::Options::="--force-confdef" \
+    -o Dpkg::Options::="--force-confold" 2>&1
+
+# Check if reboot is required
+reboot_required=false
+if [ -f /var/run/reboot-required ]; then
+    reboot_required=true
+fi
+
+if $INTERACTIVE; then
+    echo ""
+    echo -e "${GREEN}✅ Upgrade complete.${RESET}"
+    if $reboot_required; then
+        echo -e "${RED}⚠️  Reboot required.${RESET}"
+    fi
+else
+    printf '{"status":"upgraded","upgraded":%d,"reboot_required":%s}\n' \
+        "$count" "$reboot_required"
+fi

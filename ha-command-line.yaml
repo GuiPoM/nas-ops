@@ -1,0 +1,22 @@
+- sensor:
+    name: OMV System Updates
+    unique_id: omv_system_updates
+    icon: mdi:debian
+    command: "ssh -F /config/.ssh/config omv 'sudo nas-system-update'"
+    command_timeout: 60
+    scan_interval: 3600
+    value_template: "{{ value_json.count | default(0) }}"
+    json_attributes:
+      - packages
+      - reboot_required
+
+- sensor:
+    name: OMV Docker Updates
+    unique_id: omv_docker_updates
+    icon: mdi:docker
+    command: "ssh -F /config/.ssh/config omv 'sudo nas-docker-pull'"
+    command_timeout: 300
+    scan_interval: 3600
+    value_template: "{{ value_json.count | default(0) }}"
+    json_attributes:
+      - containers

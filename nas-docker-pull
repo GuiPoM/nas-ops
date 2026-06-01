@@ -1,15 +1,16 @@
 #!/bin/bash
-# nas-docker-pull — Pull les images Docker et détecte les mises à jour disponibles
-# Usage : nas-docker-pull
-# Output : JSON (mode non-interactif) ou texte coloré (mode terminal)
-# Idempotent : tant que nas-docker-up n'a pas recréé les conteneurs,
-#              le conteneur tourne sur l'ancien image ID → l'écart est toujours détecté
+# nas-docker-pull — Pull Docker images and detect available updates
+# Usage: nas-docker-pull
+# Output: JSON (non-interactive mode) or colored text (terminal mode)
+# Idempotent: as long as nas-docker-up has not recreated the containers,
+#             the container runs on the old image ID — the gap is always detected
+# Also writes JSON to /tmp/nas-docker-pull.json for use by nas-update
 
 set -euo pipefail
 
 if [ -t 1 ]; then INTERACTIVE=true; else INTERACTIVE=false; fi
 
-# Couleurs (mode terminal uniquement)
+# Colors (terminal mode only)
 if $INTERACTIVE; then
     RED='\033[0;31m'
     GREEN='\033[0;32m'
@@ -25,14 +26,14 @@ containers_json=""
 count=0
 
 if $INTERACTIVE; then
-    echo -e "${BOLD}--- Vérification des images Docker ---${RESET}"
+    echo -e "${BOLD}--- Checking Docker images ---${RESET}"
 fi
 
 while IFS=: read -r container_id container_name; do
-    # Récupérer le compose_dir via le label
+    # Get compose_dir from container label
     compose_dir=$(docker inspect --format='{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container_id" 2>/dev/null | xargs)
 
-    # Ignorer les conteneurs hors compose
+    # Skip containers not managed by compose
     if [ -z "$compose_dir" ] || [ ! -d "$compose_dir" ]; then
         continue
     fi
@@ -40,14 +41,14 @@ while IFS=: read -r container_id container_name; do
     image_name=$(docker inspect --format='{{.Config.Image}}' "$container_id")
     old_image_id=$(docker inspect --format='{{.Image}}' "$container_id")
     old_ver=$(docker inspect --format='{{index .Config.Labels "org.opencontainers.image.version"}}' "$container_id" 2>/dev/null || echo "")
-    [ -z "$old_ver" ] && old_ver="inconnue"
+    [ -z "$old_ver" ] && old_ver="unknown"
 
     if $INTERACTIVE; then
-        echo -ne "  Vérification de ${CYAN}${container_name}${RESET}... "
+        echo -ne "  Checking ${CYAN}${container_name}${RESET}... "
     fi
 
     if ! docker pull "$image_name" > /dev/null 2>&1; then
-        if $INTERACTIVE; then echo -e "${YELLOW}⚠ Erreur de pull (ignoré)${RESET}"; fi
+        if $INTERACTIVE; then echo -e "${YELLOW}⚠ Pull error (skipped)${RESET}"; fi
         continue
     fi
 
@@ -55,10 +56,10 @@ while IFS=: read -r container_id container_name; do
 
     if [ "$old_image_id" != "$new_image_id" ]; then
         new_ver=$(docker inspect --format='{{index .Config.Labels "org.opencontainers.image.version"}}' "$image_name" 2>/dev/null || echo "")
-        [ -z "$new_ver" ] && new_ver="disponible"
+        [ -z "$new_ver" ] && new_ver="available"
 
         if $INTERACTIVE; then
-            echo -e "${YELLOW}MAJ DISPONIBLE${RESET} : ${YELLOW}${old_ver}${RESET} → ${GREEN}${new_ver}${RESET}"
+            echo -e "${YELLOW}UPDATE AVAILABLE${RESET}: ${YELLOW}${old_ver}${RESET} → ${GREEN}${new_ver}${RESET}"
         fi
 
         entry="{\"name\":\"${container_name}\",\"image\":\"${image_name}\",\"compose_dir\":\"${compose_dir}\",\"current\":\"${old_ver}\",\"available\":\"${new_ver}\"}"
@@ -69,21 +70,21 @@ while IFS=: read -r container_id container_name; do
         fi
         count=$((count + 1))
     else
-        if $INTERACTIVE; then echo -e "${GREEN}✅ À jour${RESET}"; fi
+        if $INTERACTIVE; then echo -e "${GREEN}✅ Up to date${RESET}"; fi
     fi
 
 done < <(docker ps --format "{{.ID}}:{{.Names}}")
 
-# Toujours écrire le JSON dans /tmp pour nas-update
+# Always write JSON to /tmp for use by nas-update
 printf '{"count":%d,"containers":[%s]}\n' "$count" "$containers_json" > /tmp/nas-docker-pull.json
 
 if $INTERACTIVE; then
     echo ""
-    echo -e "${BOLD}--- Bilan ---${RESET}"
+    echo -e "${BOLD}--- Summary ---${RESET}"
     if [ $count -eq 0 ]; then
-        echo -e "${GREEN}✅ Tous les conteneurs sont à jour.${RESET}"
+        echo -e "${GREEN}✅ All containers are up to date.${RESET}"
     else
-        echo -e "${YELLOW}🐳 ${count} conteneur(s) à mettre à jour.${RESET}"
+        echo -e "${YELLOW}🐳 ${count} container(s) available for update.${RESET}"
     fi
 else
     cat /tmp/nas-docker-pull.json
