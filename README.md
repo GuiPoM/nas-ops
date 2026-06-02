@@ -1,15 +1,18 @@
-# nas-scripts
+# nas-ops
 
-Scripts de gestion des mises à jour pour NAS sous OpenMediaVault 8.
+Scripts de maintenance et de mise à jour pour NAS sous Debian / OpenMediaVault 8.
+
+Gère les mises à jour système (`apt`) et Docker (`docker compose`), avec deux modes :
+- **Terminal interactif** : affichage coloré, confirmations
+- **Non-interactif** (Home Assistant, cron) : output JSON
 
 ## Installation
 
 ```bash
-cp nas-update-system nas-upgrade-system nas-docker-pull nas-docker-up nas-docker-prune nas-update /usr/local/bin/
-chmod +x /usr/local/bin/nas-update-system /usr/local/bin/nas-upgrade-system \
-         /usr/local/bin/nas-docker-pull /usr/local/bin/nas-docker-up \
-         /usr/local/bin/nas-docker-prune /usr/local/bin/nas-update
+curl -fsSL https://raw.githubusercontent.com/GuiPoM/nas-ops/main/install.sh | bash
 ```
+
+Les scripts sont installés dans `/usr/local/bin/` et disponibles directement en ligne de commande.
 
 ## Scripts
 
