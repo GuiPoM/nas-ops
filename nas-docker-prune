@@ -1,0 +1,22 @@
+#!/bin/bash
+# nas-docker-prune — Nettoie les images Docker orphelines (dangling)
+# Usage : nas-docker-prune
+# À appeler après nas-docker-up pour supprimer les anciennes images remplacées
+
+set -euo pipefail
+
+if [ -t 1 ]; then INTERACTIVE=true; else INTERACTIVE=false; fi
+
+if $INTERACTIVE; then
+    CYAN='\033[0;36m'
+    GREEN='\033[0;32m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+    echo -e "${CYAN}🧹 Nettoyage des images orphelines...${RESET}"
+fi
+
+docker image prune -f
+
+if $INTERACTIVE; then
+    echo -e "${GREEN}✅ Nettoyage terminé.${RESET}"
+fi

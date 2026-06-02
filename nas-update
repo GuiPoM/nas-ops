@@ -1,0 +1,202 @@
+#!/bin/bash
+# nas-update — Script racine de gestion des mises à jour NAS
+# Orchestre nas-update-system, nas-upgrade-system, nas-docker-pull, nas-docker-up, nas-docker-prune
+# Usage : nas-update
+
+set -euo pipefail
+
+# Couleurs
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+echo -e "${BOLD}=====================================================${RESET}"
+echo -e "${BOLD}         NAS — Gestionnaire de mises à jour          ${RESET}"
+echo -e "${BOLD}=====================================================${RESET}"
+echo ""
+
+# ─────────────────────────────────────────────────────
+# Phase 1 : Analyse système
+# ─────────────────────────────────────────────────────
+echo -e "${BOLD}--- Phase 1 : Analyse système (apt) ---${RESET}"
+nas-update-system
+echo ""
+
+# ─────────────────────────────────────────────────────
+# Phase 2 : Analyse Docker (pull + détection diffs)
+# ─────────────────────────────────────────────────────
+echo -e "${BOLD}--- Phase 2 : Analyse Docker ---${RESET}"
+
+nas-docker-pull
+
+# Lire le JSON écrit par nas-docker-pull
+docker_json=$(cat /tmp/nas-docker-pull.json 2>/dev/null || echo '{"count":0,"containers":[]}')
+
+containers_to_update=()
+compose_dirs=()
+old_versions=()
+new_versions=()
+
+while IFS= read -r line; do
+    name=$(echo "$line" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)
+    compose_dir=$(echo "$line" | grep -o '"compose_dir":"[^"]*"' | cut -d'"' -f4)
+    current=$(echo "$line" | grep -o '"current":"[^"]*"' | cut -d'"' -f4)
+    available=$(echo "$line" | grep -o '"available":"[^"]*"' | cut -d'"' -f4)
+    [ -z "$name" ] && continue
+    containers_to_update+=("$name")
+    compose_dirs+=("$compose_dir")
+    old_versions+=("$current")
+    new_versions+=("$available")
+done < <(echo "$docker_json" | grep -o '{[^}]*}')
+
+echo ""
+
+# ─────────────────────────────────────────────────────
+# Phase 3 : Upgrade système
+# ─────────────────────────────────────────────────────
+echo -e "${BOLD}--- Phase 3 : Mise à jour système ---${RESET}"
+
+while true; do
+    read -p "Appliquer apt full-upgrade ? [y/n] : " sys_choice
+    case "$sys_choice" in
+        [yY]*)
+            nas-upgrade-system
+            break
+            ;;
+        [nN]*)
+            echo -e "${YELLOW}⏭  Mise à jour système ignorée.${RESET}"
+            break
+            ;;
+        *) echo "Veuillez répondre par y ou n." ;;
+    esac
+done
+
+echo ""
+
+# ─────────────────────────────────────────────────────
+# Phase 4 : Upgrade Docker
+# ─────────────────────────────────────────────────────
+echo -e "${BOLD}--- Phase 4 : Mise à jour Docker ---${RESET}"
+
+if [ ${#containers_to_update[@]} -eq 0 ]; then
+    echo -e "${GREEN}✅ Aucun conteneur à mettre à jour.${RESET}"
+    echo ""
+    echo -e "${BOLD}=====================================================${RESET}"
+    echo -e "${GREEN}                  Terminé !                         ${RESET}"
+    echo -e "${BOLD}=====================================================${RESET}"
+    exit 0
+fi
+
+echo ""
+echo -e "${BOLD}Bilan des conteneurs à mettre à jour :${RESET}"
+for i in "${!containers_to_update[@]}"; do
+    echo -e "  • ${CYAN}${containers_to_update[$i]}${RESET} : ${YELLOW}${old_versions[$i]}${RESET} → ${GREEN}${new_versions[$i]}${RESET}"
+done
+echo ""
+
+UPDATE_ALL=false
+while true; do
+    read -p "Mettre à jour TOUS ces conteneurs ? [y]es (Tout) / [n]o (Choisir par conteneur) / [s]kip (Ignorer tout) : " docker_choice
+    case "$docker_choice" in
+        [yY]*) UPDATE_ALL=true; break ;;
+        [nN]*) UPDATE_ALL=false; break ;;
+        [sS]*) echo -e "${YELLOW}⏭  Mise à jour Docker ignorée.${RESET}"; break ;;
+        *) echo "Veuillez répondre par y, n ou s." ;;
+    esac
+done
+
+if [[ "$docker_choice" =~ ^[sS] ]]; then
+    echo ""
+    echo -e "${BOLD}=====================================================${RESET}"
+    echo -e "${GREEN}                  Terminé !                         ${RESET}"
+    echo -e "${BOLD}=====================================================${RESET}"
+    exit 0
+fi
+
+# Détection de l'env global OMV
+OMV_GLOBAL_ENV=""
+if [ -f "/etc/omv-compose.env" ]; then
+    OMV_GLOBAL_ENV="/etc/omv-compose.env"
+elif [ -f "/srv/omv-compose.env" ]; then
+    OMV_GLOBAL_ENV="/srv/omv-compose.env"
+fi
+
+START_DIR=$(pwd)
+upgraded=0
+failed=0
+
+for i in "${!containers_to_update[@]}"; do
+    c_name="${containers_to_update[$i]}"
+    c_dir="${compose_dirs[$i]}"
+    c_old_ver="${old_versions[$i]}"
+    c_new_ver="${new_versions[$i]}"
+
+    DO_UPDATE=false
+
+    if [ "$UPDATE_ALL" = true ]; then
+        DO_UPDATE=true
+    else
+        while true; do
+            read -p "  Mettre à jour '${c_name}' (${c_old_ver} → ${c_new_ver}) ? [y/n] : " choice
+            case "$choice" in
+                [yY]*) DO_UPDATE=true; break ;;
+                [nN]*) DO_UPDATE=false; break ;;
+                *) echo "Veuillez répondre par y ou n." ;;
+            esac
+        done
+    fi
+
+    if [ "$DO_UPDATE" = true ]; then
+        echo -e "  🚀 Mise à jour de ${CYAN}${c_name}${RESET}..."
+
+        if cd "$c_dir" 2>/dev/null; then
+            ENV_ARGS=""
+
+            if [ -n "$OMV_GLOBAL_ENV" ] && [ -f "$OMV_GLOBAL_ENV" ]; then
+                ENV_ARGS="--env-file $OMV_GLOBAL_ENV"
+            else
+                PARENT_DIR=$(dirname "$c_dir")
+                if [ -f "$PARENT_DIR/global.env" ]; then
+                    ENV_ARGS="--env-file $PARENT_DIR/global.env"
+                elif [ -f "$PARENT_DIR/.env" ]; then
+                    ENV_ARGS="--env-file $PARENT_DIR/.env"
+                fi
+            fi
+
+            if [ -f ".env" ]; then
+                ENV_ARGS="$ENV_ARGS --env-file .env"
+            fi
+
+            if docker compose $ENV_ARGS up -d --remove-orphans 2>&1; then
+                echo -e "  ${GREEN}✅ ${c_name} mis à jour avec succès.${RESET}"
+                upgraded=$((upgraded + 1))
+            else
+                echo -e "  ${RED}❌ Échec pour ${c_name}.${RESET}"
+                failed=$((failed + 1))
+            fi
+        else
+            echo -e "  ${RED}❌ Impossible d'accéder à ${c_dir}.${RESET}"
+            failed=$((failed + 1))
+        fi
+    else
+        echo -e "  ⏭  Ignoré : ${c_name}"
+    fi
+
+    cd "$START_DIR"
+done
+
+# ─────────────────────────────────────────────────────
+# Phase 5 : Nettoyage des images orphelines
+# ─────────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}--- Phase 5 : Nettoyage ---${RESET}"
+nas-docker-prune
+
+echo ""
+echo -e "${BOLD}=====================================================${RESET}"
+echo -e "${BOLD}                     Terminé !                       ${RESET}"
+echo -e "  Docker : ${GREEN}✅ ${upgraded} mis à jour${RESET}  ${RED}❌ ${failed} en échec${RESET}"
+echo -e "${BOLD}=====================================================${RESET}"

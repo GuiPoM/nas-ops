@@ -1,0 +1,51 @@
+# configuration.yaml — Home Assistant shell_command pour le NAS
+#
+# Ajouter dans configuration.yaml :
+#
+# shell_command:
+#   nas_update_system: "ssh -F /config/.ssh/config omv 'sudo nas-update-system'"
+#   nas_upgrade_system: "ssh -F /config/.ssh/config omv 'sudo nas-upgrade-system'"
+#   nas_docker_pull: "ssh -F /config/.ssh/config omv 'sudo nas-docker-pull'"
+#   nas_docker_up: "ssh -F /config/.ssh/config omv 'sudo nas-docker-up'"
+#   nas_docker_up_stack: "ssh -F /config/.ssh/config omv 'sudo nas-docker-up {{ stack }}'"
+#
+# Exemples d'utilisation depuis un script HA ou une automation :
+#
+# service: shell_command.nas_update_system
+# service: shell_command.nas_upgrade_system
+# service: shell_command.nas_docker_pull
+# service: shell_command.nas_docker_up
+# service: shell_command.nas_docker_up_stack
+#   data:
+#     stack: jellyfin
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Sensor command_line pour exposer le résultat du check système dans HA
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# command_line:
+#   - sensor:
+#       name: NAS System Updates
+#       unique_id: nas_system_updates
+#       command: "ssh -F /config/.ssh/config omv 'sudo nas-update-system'"
+#       scan_interval: 3600
+#       value_template: "{{ value_json.count }}"
+#       json_attributes:
+#         - packages
+#         - reboot_required
+#
+#   - sensor:
+#       name: NAS Docker Updates
+#       unique_id: nas_docker_updates
+#       command: "ssh -F /config/.ssh/config omv 'sudo nas-docker-pull'"
+#       scan_interval: 3600
+#       value_template: "{{ value_json.count }}"
+#       json_attributes:
+#         - containers
+#
+# Ces sensors exposent :
+#   - sensor.nas_system_updates        → nombre de paquets apt upgradables
+#   - sensor.nas_docker_updates        → nombre de conteneurs Docker à mettre à jour
+#   - sensor.nas_system_updates.reboot_required  → true/false
+#   - sensor.nas_system_updates.packages         → liste des paquets
+#   - sensor.nas_docker_updates.containers       → liste des conteneurs
