@@ -58,11 +58,14 @@ while IFS=: read -r container_id container_name; do
         new_ver=$(docker inspect --format='{{index .Config.Labels "org.opencontainers.image.version"}}' "$image_name" 2>/dev/null || echo "")
         [ -z "$new_ver" ] && new_ver="available"
 
+        source_url=$(docker inspect --format='{{index .Config.Labels "org.opencontainers.image.source"}}' "$image_name" 2>/dev/null | sed 's/\.git$//' || echo "")
+
         if $INTERACTIVE; then
             echo -e "${YELLOW}UPDATE AVAILABLE${RESET}: ${YELLOW}${old_ver}${RESET} → ${GREEN}${new_ver}${RESET}"
+            [ -n "$source_url" ] && echo -e "    Source: ${CYAN}${source_url}${RESET}"
         fi
 
-        entry="{\"name\":\"${container_name}\",\"image\":\"${image_name}\",\"compose_dir\":\"${compose_dir}\",\"current\":\"${old_ver}\",\"available\":\"${new_ver}\"}"
+        entry="{\"name\":\"${container_name}\",\"image\":\"${image_name}\",\"compose_dir\":\"${compose_dir}\",\"current\":\"${old_ver}\",\"available\":\"${new_ver}\",\"source\":\"${source_url}\"}"
         if [ $count -eq 0 ]; then
             containers_json="${entry}"
         else
