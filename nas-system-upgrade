@@ -34,7 +34,7 @@ packages=()
 while IFS= read -r line; do
     name=$(echo "$line" | awk '{print $2}')
     [ -z "$name" ] && continue
-    current=$(echo "$line" | grep -oP '(?<=\[)[^\]]+' | awk '{print $1}' | tr -d '[:space:]' || echo "")
+    current=$(echo "$line" | grep -oP '(?<=\[)[^\]]+' | awk '{print $1}' | head -1 | tr -d '[:space:]' || echo "")
     [ -z "$current" ] && current="N/A"
     available=$(echo "$line" | grep -oP '(?<=\()[^ ]+' | head -1)
     [ -z "$available" ] && continue
