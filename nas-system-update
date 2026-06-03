@@ -37,8 +37,8 @@ while IFS= read -r line; do
     name=$(echo "$line" | awk '{print $2}' | tr -d '[:space:]')
     [ -z "$name" ] && continue
 
-    # Current version: inside [...] if present, else N/A
-    current=$(echo "$line" | grep -oP '(?<=\[)[^\]]+' | tr -d '[:space:]' || echo "")
+    # Current version: first word inside [...] if present, else N/A
+    current=$(echo "$line" | grep -oP '(?<=\[)[^\]]+' | awk '{print $1}' | tr -d '[:space:]' || echo "")
     [ -z "$current" ] && current="N/A"
 
     # Available version: first word inside first (...)
