@@ -20,3 +20,4 @@
     value_template: "{{ value_json.count | default(0) }}"
     json_attributes:
       - containers
+      - sources

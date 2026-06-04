@@ -23,6 +23,7 @@ else
 fi
 
 containers_json=""
+sources_json=""
 count=0
 
 if $INTERACTIVE; then
@@ -68,8 +69,10 @@ while IFS=: read -r container_id container_name; do
         entry="{\"name\":\"${container_name}\",\"image\":\"${image_name}\",\"compose_dir\":\"${compose_dir}\",\"current\":\"${old_ver}\",\"available\":\"${new_ver}\",\"source\":\"${source_url}\"}"
         if [ $count -eq 0 ]; then
             containers_json="${entry}"
+            [ -n "$source_url" ] && sources_json="{\"name\":\"${container_name}\",\"releases\":\"${source_url}/releases\"}"
         else
             containers_json="${containers_json},${entry}"
+            [ -n "$source_url" ] && sources_json="${sources_json},{\"name\":\"${container_name}\",\"releases\":\"${source_url}/releases\"}"
         fi
         count=$((count + 1))
     else
@@ -79,7 +82,7 @@ while IFS=: read -r container_id container_name; do
 done < <(docker ps --format "{{.ID}}:{{.Names}}")
 
 # Always write JSON to /tmp for use by nas-update
-printf '{"count":%d,"containers":[%s]}\n' "$count" "$containers_json" > /tmp/nas-docker-pull.json
+printf '{"count":%d,"containers":[%s],"sources":[%s]}\n' "$count" "$containers_json" "$sources_json" > /tmp/nas-docker-pull.json
 
 if $INTERACTIVE; then
     echo ""
