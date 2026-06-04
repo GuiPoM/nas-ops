@@ -3,7 +3,7 @@
 # Orchestrates nas-system-update, nas-system-upgrade, nas-docker-pull, nas-docker-up, nas-docker-prune
 # Usage: nas-update
 
-set -euo pipefail
+set -uo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -40,17 +40,19 @@ compose_dirs=()
 old_versions=()
 new_versions=()
 
-while IFS= read -r line; do
-    name=$(echo "$line" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)
-    compose_dir=$(echo "$line" | grep -o '"compose_dir":"[^"]*"' | cut -d'"' -f4)
-    current=$(echo "$line" | grep -o '"current":"[^"]*"' | cut -d'"' -f4)
-    available=$(echo "$line" | grep -o '"available":"[^"]*"' | cut -d'"' -f4)
+while IFS='|' read -r name compose_dir current available; do
     [ -z "$name" ] && continue
+    [ -z "$compose_dir" ] && continue
     containers_to_update+=("$name")
     compose_dirs+=("$compose_dir")
     old_versions+=("$current")
     new_versions+=("$available")
-done < <(echo "$docker_json" | grep -o '{[^}]*}')
+done < <(echo "$docker_json" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for c in data.get('containers', []):
+    print('{}|{}|{}|{}'.format(c.get('name',''), c.get('compose_dir',''), c.get('current',''), c.get('available','')))
+" 2>/dev/null || true)
 
 echo ""
 
@@ -60,7 +62,7 @@ echo ""
 echo -e "${BOLD}--- Phase 3: System upgrade ---${RESET}"
 
 while true; do
-    read -p "Apply apt full-upgrade? [y/n]: " sys_choice
+    read -p "Apply apt full-upgrade? [y/n]: " sys_choice </dev/tty
     case "$sys_choice" in
         [yY]*)
             nas-system-upgrade
@@ -99,7 +101,7 @@ echo ""
 
 UPDATE_ALL=false
 while true; do
-    read -p "Update ALL containers? [y]es (All) / [n]o (Choose per container) / [s]kip (Skip all): " docker_choice
+    read -p "Update ALL containers? [y]es (All) / [n]o (Choose per container) / [s]kip (Skip all): " docker_choice </dev/tty
     case "$docker_choice" in
         [yY]*) UPDATE_ALL=true; break ;;
         [nN]*) UPDATE_ALL=false; break ;;
@@ -140,7 +142,7 @@ for i in "${!containers_to_update[@]}"; do
         DO_UPDATE=true
     else
         while true; do
-            read -p "  Update '${c_name}' (${c_old_ver} → ${c_new_ver})? [y/n]: " choice
+            read -p "  Update '${c_name}' (${c_old_ver} → ${c_new_ver})? [y/n]: " choice </dev/tty
             case "$choice" in
                 [yY]*) DO_UPDATE=true; break ;;
                 [nN]*) DO_UPDATE=false; break ;;
