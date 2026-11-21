@@ -69,10 +69,18 @@ while IFS=: read -r container_id container_name; do
         entry="{\"name\":\"${container_name}\",\"image\":\"${image_name}\",\"compose_dir\":\"${compose_dir}\",\"current\":\"${old_ver}\",\"available\":\"${new_ver}\",\"source\":\"${source_url}\"}"
         if [ $count -eq 0 ]; then
             containers_json="${entry}"
-            [ -n "$source_url" ] && sources_json="{\"name\":\"${container_name}\",\"releases\":\"${source_url}/releases\"}"
+            if [ -n "$source_url" ]; then
+                sources_json="{\"name\":\"${container_name}\",\"releases\":\"${source_url}/releases\"}"
+            fi
         else
             containers_json="${containers_json},${entry}"
-            [ -n "$source_url" ] && sources_json="${sources_json},{\"name\":\"${container_name}\",\"releases\":\"${source_url}/releases\"}"
+            if [ -n "$source_url" ]; then
+                if [ -z "$sources_json" ]; then
+                    sources_json="{\"name\":\"${container_name}\",\"releases\":\"${source_url}/releases\"}"
+                else
+                    sources_json="${sources_json},{\"name\":\"${container_name}\",\"releases\":\"${source_url}/releases\"}"
+                fi
+            fi
         fi
         count=$((count + 1))
     else
