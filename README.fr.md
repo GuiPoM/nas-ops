@@ -18,6 +18,23 @@ Pour installer une branche publiée à des fins de test, définir `NAS_OPS_BRANC
 NAS_OPS_BRANCH=feat/compatibility-and-docker-dedup bash <(curl -fsSL https://raw.githubusercontent.com/GuiPoM/nas-ops/feat/compatibility-and-docker-dedup/install.sh)
 ```
 
+Après l’installation, vérifier la branche sur le NAS avec les commandes compatibles avec Home Assistant :
+
+```bash
+sudo nas-system-update
+sudo nas-docker-pull
+sudo nas-docker-up
+sudo nas-docker-prune
+```
+
+Pour exécuter le parcours interactif complet :
+
+```bash
+nas-update
+```
+
+Sans terminal, `nas-docker-pull` doit retourner un JSON valide. Avant d’appliquer les mises à jour, vérifier que les conteneurs et répertoires Compose détectés sont corrects. Pour une stack contenant plusieurs conteneurs mis à jour, `nas-docker-up` ne doit exécuter `docker compose up -d` qu’une seule fois, tout en indiquant le nombre de conteneurs mis à jour.
+
 Les scripts sont installés dans `/usr/local/bin/` et disponibles directement en ligne de commande. L’installateur vérifie la présence de `curl`, `docker`, `apt-get` et `python3`.
 
 ## Configuration sudo (requis pour Home Assistant)
