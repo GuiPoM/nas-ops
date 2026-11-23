@@ -12,7 +12,13 @@ Handles system updates (`apt`) and Docker updates (`docker compose`), with two m
 bash <(curl -fsSL https://raw.githubusercontent.com/GuiPoM/nas-ops/main/install.sh)
 ```
 
-Scripts are installed in `/usr/local/bin/` and available directly from the command line.
+To install a published branch for testing, set `NAS_OPS_BRANCH` and fetch the installer from the same branch:
+
+```bash
+NAS_OPS_BRANCH=feat/compatibility-and-docker-dedup bash <(curl -fsSL https://raw.githubusercontent.com/GuiPoM/nas-ops/feat/compatibility-and-docker-dedup/install.sh)
+```
+
+Scripts are installed in `/usr/local/bin/` and available directly from the command line. The installer checks for `curl`, `docker`, `apt-get` and `python3`.
 
 ## Sudo configuration (required for Home Assistant)
 
@@ -36,6 +42,8 @@ Interactive root script. Orchestrates all steps in order:
 3. System upgrade (with confirmation)
 4. Docker upgrade (all at once or container by container)
 5. Orphaned image cleanup
+
+If Debian/OMV reports that a reboot is required, `nas-update` asks for confirmation at the end. It never reboots automatically in a non-interactive Home Assistant call.
 
 ```bash
 nas-update
@@ -87,7 +95,7 @@ nas-docker-pull
 ```
 
 ```json
-{"count":1,"containers":[{"name":"jellyfin","image":"jellyfin/jellyfin:latest","compose_dir":"/opt/stacks/jellyfin","current":"10.9.0","available":"available"}]}
+{"count":1,"containers":[{"name":"jellyfin","image":"jellyfin/jellyfin:latest","compose_dir":"/opt/stacks/jellyfin","current":"10.9.0","available":"available","source":"https://github.com/example/jellyfin"}],"sources":[{"name":"jellyfin","releases":"https://github.com/example/jellyfin/releases"}]}
 ```
 
 ---
@@ -100,6 +108,8 @@ Recreates containers on the new image via `docker compose up -d --remove-orphans
 - With argument: targets a specific stack
 - Terminal mode: confirmation per stack or all at once
 - Non-interactive mode (HA): applies directly
+
+When several updated containers belong to the same Compose directory, the stack is applied only once. The reported counters still count containers.
 
 ```bash
 nas-docker-up              # all stacks

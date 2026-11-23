@@ -1,2 +1,3 @@
 * text=auto
 nas-* text eol=lf
+install.sh text eol=lf

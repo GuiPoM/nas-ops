@@ -12,7 +12,13 @@ Gère les mises à jour système (`apt`) et Docker (`docker compose`), avec deux
 bash <(curl -fsSL https://raw.githubusercontent.com/GuiPoM/nas-ops/main/install.sh)
 ```
 
-Les scripts sont installés dans `/usr/local/bin/` et disponibles directement en ligne de commande.
+Pour installer une branche publiée à des fins de test, définir `NAS_OPS_BRANCH` et télécharger l’installateur depuis cette même branche :
+
+```bash
+NAS_OPS_BRANCH=feat/compatibility-and-docker-dedup bash <(curl -fsSL https://raw.githubusercontent.com/GuiPoM/nas-ops/feat/compatibility-and-docker-dedup/install.sh)
+```
+
+Les scripts sont installés dans `/usr/local/bin/` et disponibles directement en ligne de commande. L’installateur vérifie la présence de `curl`, `docker`, `apt-get` et `python3`.
 
 ## Configuration sudo (requis pour Home Assistant)
 
@@ -36,6 +42,8 @@ Script racine interactif. Orchestre toutes les étapes dans l'ordre :
 3. Upgrade système (confirmation)
 4. Upgrade Docker (tout ou conteneur par conteneur)
 5. Nettoyage des images orphelines
+
+Si Debian/OMV signale qu’un redémarrage est nécessaire, `nas-update` demande une confirmation à la fin. Il ne redémarre jamais automatiquement lors d’un appel Home Assistant non interactif.
 
 ```bash
 nas-update
@@ -87,7 +95,7 @@ nas-docker-pull
 ```
 
 ```json
-{"count":1,"containers":[{"name":"jellyfin","image":"jellyfin/jellyfin:latest","compose_dir":"/opt/stacks/jellyfin","current":"10.9.0","available":"disponible"}]}
+{"count":1,"containers":[{"name":"jellyfin","image":"jellyfin/jellyfin:latest","compose_dir":"/opt/stacks/jellyfin","current":"10.9.0","available":"disponible","source":"https://github.com/example/jellyfin"}],"sources":[{"name":"jellyfin","releases":"https://github.com/example/jellyfin/releases"}]}
 ```
 
 ---
@@ -100,6 +108,8 @@ Recrée les conteneurs sur la nouvelle image via `docker compose up -d --remove-
 - Avec argument : cible une stack spécifique
 - Mode terminal : confirmation par stack ou tout d'un coup
 - Mode non-interactif (HA) : applique directement
+
+Quand plusieurs conteneurs mis à jour appartiennent au même répertoire Compose, la stack n’est appliquée qu’une seule fois. Les compteurs continuent toutefois de compter les conteneurs.
 
 ```bash
 nas-docker-up              # toutes les stacks

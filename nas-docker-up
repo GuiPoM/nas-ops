@@ -10,7 +10,52 @@ set -euo pipefail
 
 if [ -t 1 ]; then INTERACTIVE=true; else INTERACTIVE=false; fi
 
-TARGET_STACK="${1:-}"
+TARGET_STACK=""
+CACHE_FILE=""
+ASSUME_YES=false
+SELECTIVE=false
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --from-cache)
+            [ "$#" -ge 2 ] || { echo "Error: --from-cache requires a file." >&2; exit 2; }
+            CACHE_FILE="$2"
+            shift 2
+            ;;
+        --yes)
+            ASSUME_YES=true
+            shift
+            ;;
+        --selective)
+            SELECTIVE=true
+            shift
+            ;;
+        --)
+            shift
+            [ "$#" -le 1 ] || { echo "Error: only one stack may be specified." >&2; exit 2; }
+            TARGET_STACK="${1:-}"
+            shift
+            ;;
+        -* )
+            echo "Usage: nas-docker-up [--from-cache FILE] [stack_name]" >&2
+            exit 2
+            ;;
+        *)
+            [ -z "$TARGET_STACK" ] || { echo "Error: only one stack may be specified." >&2; exit 2; }
+            TARGET_STACK="$1"
+            shift
+            ;;
+    esac
+done
+
+if [ -n "$CACHE_FILE" ] && ! python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$CACHE_FILE" 2>/dev/null; then
+    echo "Error: invalid Docker update cache: $CACHE_FILE" >&2
+    exit 1
+fi
+if [ -n "$CACHE_FILE" ] && [ -n "$TARGET_STACK" ]; then
+    echo "Error: --from-cache cannot be combined with a stack name." >&2
+    exit 2
+fi
 
 # Colors (terminal mode only)
 if $INTERACTIVE; then
@@ -44,6 +89,23 @@ if $INTERACTIVE; then
     echo -e "${BOLD}--- Phase 1: Detecting updates ---${RESET}"
 fi
 
+if [ -n "$CACHE_FILE" ]; then
+    while IFS=$'\t' read -r container_name compose_dir old_ver new_ver; do
+        [ -n "$container_name" ] || continue
+        [ -n "$compose_dir" ] || continue
+        if [ -z "$compose_dir" ] || [ ! -d "$compose_dir" ]; then
+            continue
+        fi
+        containers_to_update+=("$container_name")
+        compose_dirs+=("$compose_dir")
+        container_ids+=("")
+        old_versions+=("${old_ver:-unknown}")
+        new_versions+=("${new_ver:-available}")
+    done < <(python3 -c 'import json, sys
+data = json.load(open(sys.argv[1]))
+for c in data.get("containers", []):
+    print("\t".join(str(c.get(k, "")) for k in ("name", "compose_dir", "current", "available")))' "$CACHE_FILE")
+else
 while IFS=: read -r container_id container_name; do
     # Filter by stack if argument provided
     if [ -n "$TARGET_STACK" ] && [ "$container_name" != "$TARGET_STACK" ]; then
@@ -94,6 +156,7 @@ while IFS=: read -r container_id container_name; do
     fi
 
 done < <(docker ps --format "{{.ID}}:{{.Names}}")
+fi
 
 if [ ${#containers_to_update[@]} -eq 0 ]; then
     if $INTERACTIVE; then
@@ -102,6 +165,38 @@ if [ ${#containers_to_update[@]} -eq 0 ]; then
     fi
     exit 0
 fi
+
+# docker compose operates on the complete stack. Group updated containers by
+# compose directory so a multi-container stack is recreated only once.
+declare -A group_index=()
+group_names=()
+group_dirs=()
+group_old_versions=()
+group_new_versions=()
+group_counts=()
+
+for i in "${!containers_to_update[@]}"; do
+    c_dir="${compose_dirs[$i]}"
+    if [ -n "${group_index[$c_dir]+set}" ]; then
+        group_i="${group_index[$c_dir]}"
+        group_names[$group_i]="${group_names[$group_i]}, ${containers_to_update[$i]}"
+        group_counts[$group_i]=$((group_counts[$group_i] + 1))
+    else
+        group_i=${#group_dirs[@]}
+        group_index[$c_dir]="$group_i"
+        group_names+=("${containers_to_update[$i]}")
+        group_dirs+=("$c_dir")
+        group_old_versions+=("${old_versions[$i]}")
+        group_new_versions+=("${new_versions[$i]}")
+        group_counts+=(1)
+    fi
+done
+
+containers_to_update=("${group_names[@]}")
+compose_dirs=("${group_dirs[@]}")
+old_versions=("${group_old_versions[@]}")
+new_versions=("${group_new_versions[@]}")
+container_counts=("${group_counts[@]}")
 
 if $INTERACTIVE; then
     echo ""
@@ -112,7 +207,11 @@ if $INTERACTIVE; then
     echo ""
 
     # If a specific stack was given, apply directly without asking
-    if [ -z "$TARGET_STACK" ]; then
+    if [ "$ASSUME_YES" = true ]; then
+        UPDATE_ALL=true
+    elif [ "$SELECTIVE" = true ]; then
+        UPDATE_ALL=false
+    elif [ -z "$TARGET_STACK" ]; then
         UPDATE_ALL=false
         while true; do
             read -p "Update ALL containers? [y]es (All) / [n]o (Choose per container): " global_choice
@@ -166,43 +265,43 @@ for i in "${!containers_to_update[@]}"; do
             echo -e "  🚀 Updating ${CYAN}${c_name}${RESET} in ${c_dir}..."
         fi
 
-        if cd "$c_dir" 2>/dev/null; then
-            ENV_ARGS=""
+        if [ -n "$c_dir" ] && [ -d "$c_dir" ] && cd "$c_dir" 2>/dev/null; then
+            ENV_ARGS=()
 
             # Global OMV env
             if [ -n "$OMV_GLOBAL_ENV" ] && [ -f "$OMV_GLOBAL_ENV" ]; then
-                ENV_ARGS="--env-file $OMV_GLOBAL_ENV"
+                ENV_ARGS+=(--env-file "$OMV_GLOBAL_ENV")
             else
                 # Fallback: look for global.env or .env in parent directory
                 PARENT_DIR=$(dirname "$c_dir")
                 if [ -f "$PARENT_DIR/global.env" ]; then
-                    ENV_ARGS="--env-file $PARENT_DIR/global.env"
+                    ENV_ARGS+=(--env-file "$PARENT_DIR/global.env")
                 elif [ -f "$PARENT_DIR/.env" ]; then
-                    ENV_ARGS="--env-file $PARENT_DIR/.env"
+                    ENV_ARGS+=(--env-file "$PARENT_DIR/.env")
                 fi
             fi
 
             # Local .env (always added if present)
             if [ -f ".env" ]; then
-                ENV_ARGS="$ENV_ARGS --env-file .env"
+                ENV_ARGS+=(--env-file .env)
             fi
 
-            if docker compose $ENV_ARGS up -d --remove-orphans 2>&1; then
+            if docker compose "${ENV_ARGS[@]}" up -d --remove-orphans 2>&1; then
                 if $INTERACTIVE; then
                     echo -e "  ${GREEN}✅ ${c_name} updated successfully.${RESET}"
                 fi
-                upgraded=$((upgraded + 1))
+                upgraded=$((upgraded + container_counts[$i]))
             else
                 if $INTERACTIVE; then
                     echo -e "  ${RED}❌ Update failed for ${c_name}.${RESET}"
                 fi
-                failed=$((failed + 1))
+                failed=$((failed + container_counts[$i]))
             fi
         else
             if $INTERACTIVE; then
                 echo -e "  ${RED}❌ Cannot access ${c_dir}.${RESET}"
             fi
-            failed=$((failed + 1))
+            failed=$((failed + container_counts[$i]))
         fi
     else
         if $INTERACTIVE; then
