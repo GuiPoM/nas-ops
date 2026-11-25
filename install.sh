@@ -8,7 +8,7 @@ set -euo pipefail
 exec < /dev/tty
 
 REPO="GuiPoM/nas-ops"
-BRANCH="main"
+BRANCH="${NAS_OPS_BRANCH:-main}"
 BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 INSTALL_DIR="/usr/local/bin"
 
@@ -42,13 +42,16 @@ fi
 
 # Check dependencies
 echo -e "${CYAN}Checking dependencies...${RESET}"
-for cmd in curl docker apt-get; do
+for cmd in curl docker apt-get python3; do
     if type "$cmd" > /dev/null 2>&1 || [ -x "/usr/bin/$cmd" ] || [ -x "/bin/$cmd" ]; then
         echo -e "  ${GREEN}✅ ${cmd}${RESET}"
     else
         echo -e "  ${YELLOW}⚠ ${cmd} not found — some scripts may not work${RESET}"
     fi
 done
+if ! docker compose version > /dev/null 2>&1; then
+    echo -e "  ${YELLOW}⚠ docker compose plugin not found — Docker scripts may not work${RESET}"
+fi
 echo ""
 
 # Download and install scripts

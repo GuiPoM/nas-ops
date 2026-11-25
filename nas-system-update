@@ -49,8 +49,8 @@ while IFS= read -r line; do
         echo -e "  ${CYAN}${name}${RESET} : ${YELLOW}${current}${RESET} → ${GREEN}${available}${RESET}"
     fi
 
-    # Build JSON entry
-    entry="{\"name\":\"${name}\",\"current\":\"${current}\",\"available\":\"${available}\"}"
+    # Encode values with Python rather than concatenating unescaped JSON.
+    entry=$(python3 -c 'import json, sys; print(json.dumps({"name": sys.argv[1], "current": sys.argv[2], "available": sys.argv[3]}, separators=(",", ":")))' "$name" "$current" "$available")
     if [ $count -eq 0 ]; then
         packages_json="${entry}"
     else

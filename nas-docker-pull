@@ -66,19 +66,22 @@ while IFS=: read -r container_id container_name; do
             [ -n "$source_url" ] && echo -e "    Source: ${CYAN}${source_url}${RESET}"
         fi
 
-        entry="{\"name\":\"${container_name}\",\"image\":\"${image_name}\",\"compose_dir\":\"${compose_dir}\",\"current\":\"${old_ver}\",\"available\":\"${new_ver}\",\"source\":\"${source_url}\"}"
+        # Encode values with Python rather than concatenating unescaped JSON.
+        entry=$(python3 -c 'import json, sys; print(json.dumps({"name": sys.argv[1], "image": sys.argv[2], "compose_dir": sys.argv[3], "current": sys.argv[4], "available": sys.argv[5], "source": sys.argv[6]}, separators=(",", ":")))' "$container_name" "$image_name" "$compose_dir" "$old_ver" "$new_ver" "$source_url")
+        source_entry=""
+        if [ -n "$source_url" ]; then
+            source_entry=$(python3 -c 'import json, sys; print(json.dumps({"name": sys.argv[1], "releases": sys.argv[2] + "/releases"}, separators=(",", ":")))' "$container_name" "$source_url")
+        fi
         if [ $count -eq 0 ]; then
             containers_json="${entry}"
-            if [ -n "$source_url" ]; then
-                sources_json="{\"name\":\"${container_name}\",\"releases\":\"${source_url}/releases\"}"
-            fi
+            sources_json="${source_entry}"
         else
             containers_json="${containers_json},${entry}"
-            if [ -n "$source_url" ]; then
+            if [ -n "$source_entry" ]; then
                 if [ -z "$sources_json" ]; then
-                    sources_json="{\"name\":\"${container_name}\",\"releases\":\"${source_url}/releases\"}"
+                    sources_json="${source_entry}"
                 else
-                    sources_json="${sources_json},{\"name\":\"${container_name}\",\"releases\":\"${source_url}/releases\"}"
+                    sources_json="${sources_json},${source_entry}"
                 fi
             fi
         fi
