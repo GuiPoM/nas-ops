@@ -165,6 +165,17 @@ The `command_line` sensors expose:
 - `reboot_required` and `packages` as attributes on the system sensor
 - `containers` as attribute on the Docker sensor
 
+The sensors refresh according to their configured `scan_interval`. After running an update manually, refresh them immediately from an automation or script with:
+
+```yaml
+action:
+  - action: homeassistant.update_entity
+    target:
+      entity_id:
+        - sensor.omv_system_updates
+        - sensor.omv_docker_updates
+```
+
 ## Typical workflow from HA
 
 ```
