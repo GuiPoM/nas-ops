@@ -100,10 +100,23 @@ fi
 # ─────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}--- Phase 5: Cleanup ---${RESET}"
-if ! nas-docker-prune; then
-    echo -e "${RED}❌ Docker cleanup failed.${RESET}" >&2
-    exit 1
-fi
+while true; do
+    read -p "Run Docker cleanup (remove dangling images)? [Y/n]: " prune_choice </dev/tty
+    case "$prune_choice" in
+        ""|[yY]*)
+            if ! nas-docker-prune; then
+                echo -e "${RED}❌ Docker cleanup failed.${RESET}" >&2
+                exit 1
+            fi
+            break
+            ;;
+        [nN]*)
+            echo -e "${YELLOW}⏭  Docker cleanup skipped.${RESET}"
+            break
+            ;;
+        *) echo "Please answer y or n." ;;
+    esac
+done
 
 if [ -f /var/run/reboot-required ]; then
     echo ""
