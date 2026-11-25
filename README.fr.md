@@ -58,9 +58,11 @@ Script racine interactif. Orchestre toutes les étapes dans l'ordre :
 2. Pull et détection des mises à jour Docker
 3. Upgrade système (confirmation)
 4. Upgrade Docker (tout ou conteneur par conteneur)
-5. Nettoyage des images orphelines
+5. Nettoyage optionnel des images orphelines
 
 Si Debian/OMV signale qu’un redémarrage est nécessaire, `nas-update` demande une confirmation à la fin. Il ne redémarre jamais automatiquement lors d’un appel Home Assistant non interactif.
+
+À la fin de `nas-update`, le nettoyage Docker est confirmé interactivement et la réponse par défaut est oui. La commande autonome `nas-docker-prune` reste disponible pour effectuer explicitement le nettoyage.
 
 ```bash
 nas-update
@@ -164,6 +166,17 @@ Les sensors `command_line` exposent :
 - `sensor.omv_docker_updates` → nombre de conteneurs Docker à mettre à jour
 - `reboot_required` et `packages` comme attributs du sensor système
 - `containers` comme attribut du sensor Docker
+
+Les sensors se rafraîchissent selon leur `scan_interval`. Après une mise à jour lancée manuellement, il est possible de les rafraîchir immédiatement depuis une automatisation ou un script :
+
+```yaml
+action:
+  - action: homeassistant.update_entity
+    target:
+      entity_id:
+        - sensor.omv_system_updates
+        - sensor.omv_docker_updates
+```
 
 ## Flux typique depuis HA
 

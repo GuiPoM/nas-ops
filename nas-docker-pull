@@ -62,7 +62,13 @@ while IFS=: read -r container_id container_name; do
         source_url=$(docker inspect --format='{{index .Config.Labels "org.opencontainers.image.source"}}' "$image_name" 2>/dev/null | sed 's/\.git$//' || echo "")
 
         if $INTERACTIVE; then
-            echo -e "${YELLOW}UPDATE AVAILABLE${RESET}: ${YELLOW}${old_ver}${RESET} → ${GREEN}${new_ver}${RESET}"
+            if [ "$old_ver" = "$new_ver" ] && [ "$old_ver" != "unknown" ] && [ "$new_ver" != "available" ]; then
+                echo -e "${YELLOW}IMAGE UPDATED${RESET}: ${YELLOW}${old_ver}${RESET} (new image digest)"
+            elif [ "$old_ver" = "unknown" ] || [ "$new_ver" = "available" ]; then
+                echo -e "${YELLOW}UPDATE AVAILABLE${RESET}: ${YELLOW}${old_ver}${RESET} → ${GREEN}new image${RESET}"
+            else
+                echo -e "${YELLOW}UPDATE AVAILABLE${RESET}: ${YELLOW}${old_ver}${RESET} → ${GREEN}${new_ver}${RESET}"
+            fi
             [ -n "$source_url" ] && echo -e "    Source: ${CYAN}${source_url}${RESET}"
         fi
 

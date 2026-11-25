@@ -23,7 +23,7 @@ if $INTERACTIVE; then
     echo -e "${BOLD}--- Refreshing package list ---${RESET}"
 fi
 
-apt-get update -qq 2>/dev/null
+LC_ALL=C apt-get update -qq 2>/dev/null
 
 # Parse apt-get --simulate full-upgrade
 # Format:
@@ -58,7 +58,7 @@ while IFS= read -r line; do
     fi
     count=$((count + 1))
 
-done < <(apt-get --simulate full-upgrade 2>/dev/null | grep "^Inst")
+done < <(LC_ALL=C apt-get --simulate full-upgrade 2>/dev/null | LC_ALL=C grep "^Inst")
 
 # Check if reboot is required
 reboot_required=false

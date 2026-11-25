@@ -202,7 +202,13 @@ if $INTERACTIVE; then
     echo ""
     echo -e "${BOLD}--- Phase 2: Available updates ---${RESET}"
     for i in "${!containers_to_update[@]}"; do
-        echo -e "  • ${CYAN}${containers_to_update[$i]}${RESET}: ${YELLOW}${old_versions[$i]}${RESET} → ${GREEN}${new_versions[$i]}${RESET}"
+        if [ "${old_versions[$i]}" = "${new_versions[$i]}" ] && [ "${old_versions[$i]}" != "unknown" ] && [ "${new_versions[$i]}" != "available" ]; then
+            echo -e "  • ${CYAN}${containers_to_update[$i]}${RESET}: ${YELLOW}${old_versions[$i]}${RESET} (new image digest)"
+        elif [ "${old_versions[$i]}" = "unknown" ] || [ "${new_versions[$i]}" = "available" ]; then
+            echo -e "  • ${CYAN}${containers_to_update[$i]}${RESET}: ${YELLOW}${old_versions[$i]}${RESET} → ${GREEN}new image${RESET}"
+        else
+            echo -e "  • ${CYAN}${containers_to_update[$i]}${RESET}: ${YELLOW}${old_versions[$i]}${RESET} → ${GREEN}${new_versions[$i]}${RESET}"
+        fi
     done
     echo ""
 
